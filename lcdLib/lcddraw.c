@@ -72,6 +72,28 @@ void drawChar5x7(u_char rcol, u_char rrow, char c,
   }
 }
 
+void drawChar8x12(u_char rcol, u_char rrow, char c, 
+     u_int fgColorBGR, u_int bgColorBGR) 
+{
+  u_char col = 0;
+  u_char row = 0;
+  u_char bit = 0x01;
+  u_char oc = c - 0x20;
+
+  lcd_setArea(rcol, rrow, rcol + 7, rrow + 12); /* relative to requested col/row */
+  while (row < 13) {
+    while (col < 8) {
+      u_int colorBGR = (font_8x12[oc][col] & bit) ? fgColorBGR : bgColorBGR;
+      lcd_writeColor(colorBGR);
+      col++;
+    }
+    col = 0;
+    bit <<= 1;
+    row++;
+  }
+}
+
+
 /** Draw string at col,row
  *  Type:
  *  FONT_SM - small (5x8,) FONT_MD - medium (8x12,) FONT_LG - large (11x16)
@@ -91,6 +113,16 @@ void drawString5x7(u_char col, u_char row, char *string,
   while (*string) {
     drawChar5x7(cols, row, *string++, fgColorBGR, bgColorBGR);
     cols += 6;
+  }
+}
+
+void drawString8x12(u_char col, u_char row, char *string,
+		u_int fgColorBGR, u_int bgColorBGR)
+{
+  u_char cols = col;
+  while (*string) {
+    drawChar8x12(cols, row, *string++, fgColorBGR, bgColorBGR);
+    cols += 11;
   }
 }
 
@@ -115,3 +147,29 @@ void drawRectOutline(u_char colMin, u_char rowMin, u_char width, u_char height,
   fillRectangle(colMin + width, rowMin, 1, height, colorBGR);
 }
 
+// axis zero for col, axis 1 for row
+//drawpos is where it's been, control pos is where it's really at
+short drawPos[2] = {1,10}, controlPos[2] = {2, 10};
+short colVelocity = 1, colLimits[2] = {1, screenWidth};
+short rowVelocity = 1, rowLimits[2] = {1, screenHeight};
+
+void
+draw_ball(int col, int row, unsigned short color)
+{
+  fillRectangle(col-1, row-1, 3, 3, color);
+}
+
+
+void
+screen_update_ball()
+{
+  for (char axis = 0; axis < 2; axis ++) 
+    if (drawPos[axis] != controlPos[axis]) /* position changed? */
+      goto redraw;
+  return;			/* nothing to do */
+ redraw:
+  draw_ball(drawPos[0], drawPos[1], COLOR_BLUE); /* erase */
+  for (char axis = 0; axis < 2; axis ++) 
+    drawPos[axis] = controlPos[axis];
+  draw_ball(drawPos[0], drawPos[1], COLOR_WHITE); /* draw */
+}

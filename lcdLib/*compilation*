@@ -1,0 +1,20 @@
+-*- mode: compilation; default-directory: "~/0-asciiart-blankbruno/project-3-lcd-blankbruno/lcdLib/" -*-
+Compilation started at Wed Apr 12 11:30:00
+
+make -k load2
+msp430-elf-gcc -mmcu=msp430g2553 -Os -I../h    -c -o lcddemo2.o lcddemo2.c
+msp430-elf-gcc -mmcu=msp430g2553 -Os -I../h  -L/opt/ti/msp430_gcc/include -L../lib  lcddemo2.o libLcd.a -o lcddemo2.elf -lTimer 
+msp430loader.sh lcddemo2.elf
+darwin
+loader=dslite.sh
++ echo 'DSCONFIG=--config /Users/space/msp430-m1/MSP430G2553.ccxml'
+DSCONFIG=--config /Users/space/msp430-m1/MSP430G2553.ccxml
++ dslite.sh --config /Users/space/msp430-m1/MSP430G2553.ccxml -f lcddemo2.elf
+Executing the following command:
+> /Applications/ti/uniflash_8.1.1/deskdb/content/TICloudAgent/osx/ccs_base/DebugServer/bin/DSLite flash --config /Users/space/msp430-m1/MSP430G2553.ccxml -f lcddemo2.elf
+
+For more details and examples, please refer to the UniFlash Quick Start guide.
+
+info: MSP430:  Flash/FRAM usage is 1554 bytes. RAM usage is 0 bytes.
+
+Compilation finished at Wed Apr 12 11:30:16

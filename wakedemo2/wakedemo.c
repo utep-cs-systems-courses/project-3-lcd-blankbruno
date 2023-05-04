@@ -1,0 +1,260 @@
+#include <msp430.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <libTimer.h>
+#include <time.h>
+#include "lcdutils.h"
+#include "lcddraw.h"
+
+// WARNING: LCD DISPLAY USES P1.0.  Do not touch!!! 
+
+#define LED BIT6		/* note that bit zero req'd for display */
+
+#define SW1 1
+#define SW2 2
+#define SW3 4
+#define SW4 8
+
+#define SWITCHES 15
+
+char blue = 31, green = 0, red = 31;
+unsigned char step = 0;
+
+static char 
+switch_update_interrupt_sense()
+{
+  char p2val = P2IN;
+  /* update switch interrupt to detect changes from current buttons */
+  P2IES |= (p2val & SWITCHES);	/* if switch up, sense down */
+  P2IES &= (p2val | ~SWITCHES);	/* if switch down, sense up */
+  return p2val;
+}
+
+void 
+switch_init()			/* setup switch */
+{  
+  P2REN |= SWITCHES;		/* enables resistors for switches */
+  P2IE |= SWITCHES;		/* enable interrupts from switches */
+  P2OUT |= SWITCHES;		/* pull-ups for switches */
+  P2DIR &= ~SWITCHES;		/* set switches' bits for input */
+  switch_update_interrupt_sense();
+}
+
+int switches = 0;
+
+void
+switch_interrupt_handler()
+{
+  char p2val = switch_update_interrupt_sense();
+  switches = ~p2val & SWITCHES;
+}
+
+
+// axis zero for col, axis 1 for row
+//drawpos is where it's been, control pos is where it's really at
+//TO-DO, MOVE BALL AND FUNCTIONALITY TO OTHER CLASS FOR READABILITY
+
+short drawPos[2] = {1,10}, controlPos[2] = {2, 10}, enemyPos[2][2], pointPos[2];
+short colVelocity = 1, colLimits[2] = {1, screenWidth};
+short rowVelocity = 1, rowLimits[2] = {1, screenHeight};
+int playerPoints = 0;
+
+void
+draw_ball(int col, int row, unsigned short color)
+{
+
+  fillRectangle(col, row, 3, 3, color);
+}
+
+void screen_update_enemies(u_int color) {
+  for (int i = 0; i < 2; i++) {
+    draw_ball(enemyPos[i][0], enemyPos[i][1], color); // draw the enemy body
+  }
+}
+
+void
+screen_update_balls()
+{
+  for (char axis = 0; axis < 2; axis ++) 
+    if (drawPos[axis] != controlPos[axis]) /* position changed? */
+      goto redraw;
+  return;			/* nothing to do */
+ redraw:
+  draw_ball(drawPos[0], drawPos[1], COLOR_GOLDENROD); /* trail */
+  
+  
+  for (char axis = 0; axis < 2; axis ++) 
+    drawPos[axis] = controlPos[axis];
+
+  draw_ball(drawPos[0], drawPos[1], COLOR_BROWN); /* player */
+
+}
+
+/*put the enemies in a random coordinate on the screen*/
+void init_enemies(unsigned int seed){
+  srand(seed);
+  for (int i = 0; i < 2; i++){
+    enemyPos[i][0] = rand() % (screenWidth - 10) + 2;
+    enemyPos[i][1] = rand() % (screenHeight - 10) + 2;
+  }
+}
+
+void move_enemies_toward_player(short playerCol, short playerRow){
+
+  short velocityBoost [] = {1,2};
+  
+  screen_update_enemies(COLOR_GOLDENROD);
+  
+  for (int i = 0; i < 2; i++){
+    short enemyCol = enemyPos[i][0];
+    short enemyRow = enemyPos[i][1];
+    if (enemyCol< playerCol){
+      enemyCol += colVelocity + velocityBoost[i];
+    }else{
+      enemyCol -= colVelocity + velocityBoost[i];
+  }
+    if (enemyRow < playerRow){
+      enemyRow += rowVelocity + velocityBoost[i];
+    }else{
+      enemyRow -= rowVelocity + velocityBoost[i];
+  }
+    enemyPos[i][0] = enemyCol;
+    enemyPos[i][1] = enemyRow;
+  }
+    screen_update_enemies(COLOR_BLUE);
+}
+
+short redrawScreen = 1;
+u_int controlFontColor = COLOR_GREEN;
+
+void wdt_c_handler()
+{
+  static int secCount = 0;
+
+  secCount ++;
+  if (secCount >= 25) {         /* 10/sec */
+
+    {                           /*switches correspong to ball's movement */
+      if (switches & SW4) {
+        controlPos[0] += rowVelocity + 3;   /* move right */
+      }
+      if (switches & SW3) {
+        controlPos[0] -= rowVelocity + 3;   /* move left */
+      }
+      if (switches & SW2) {
+        controlPos[1] += colVelocity + 3;   /* move down */
+      }
+      if (switches & SW1) {
+        controlPos[1] -= colVelocity + 3;   /* move up */
+      }
+      if (step <= 30)
+        step ++;
+      else
+        step = 0;
+      secCount = 0;
+    }
+    
+    if (!(switches & (SW4 | SW3 | SW2 | SW1))) {
+      return;  /* none of the switches are pressed, skip ball movement */
+    }
+
+    {                           /* move ball */
+      short oldCol = controlPos[0];
+      if (oldCol <= colLimits[0]) {
+        controlPos[0] = colLimits[0];
+      }
+      if (oldCol >= colLimits[1]) {
+        controlPos[0] = colLimits[1];
+      }
+
+      short oldRow = controlPos[1];
+      if (oldRow <= rowLimits[0]) {
+        controlPos[1] = rowLimits[0];
+      }
+      if (oldRow >= rowLimits[1]) {
+        controlPos[1] = rowLimits[1];
+      }
+
+      move_enemies_toward_player(controlPos[0], controlPos[1]);
+
+    redrawScreen = 1;
+  }
+}
+}
+
+void update_shape();
+
+void main()
+{
+  
+  P1DIR |= LED;		/**< Green led on when CPU on */
+  P1OUT |= LED;
+  configureClocks();
+  lcd_init();
+
+  switch_init();
+  init_enemies(14);
+  
+  enableWDTInterrupts();      /**< enable periodic interrupt */
+  or_sr(0x8);	              /**< GIE (enable interrupts) */
+  
+  clearScreen(COLOR_GOLD);
+  draw_maze();
+  
+  while (1) {			/* forever */
+    if (redrawScreen) {
+      redrawScreen = 0;
+      update_shape();
+    }
+    P1OUT &= ~LED;	/* led off */
+    or_sr(0x10);	/**< CPU OFF */
+    P1OUT |= LED;	/* led on */
+  }
+}
+
+void draw_maze(){
+  //TO-DO: UPDATE TO WRITE THE SCREEN WITH POETRY IN DIFFERENT FONT
+  char* maze = "#####|i don't want to die|__|but i|__!___|will|####";
+  int maze_width = 25, maze_height = 22, char_width = 5, char_height = 7;
+  int col, row;
+  char* word;
+  char* phrase;
+  char* delimiter;
+
+  for (int i = 0; i < maze_height; i++){
+    row = i * char_height;
+    
+    for (int j = 0; j < maze_width; j++){
+      col = j * char_width;
+      delimiter = strchr(&maze[i * maze_width + j], '|');
+      
+      if (delimiter != NULL){
+	word = strtok(&maze[i * maze_width + j], '|');
+	phrase = strtok(NULL, "|");
+	drawString5x7(col, row, word, COLOR_GREEN, COLOR_GOLD);
+	drawString5x7(col + char_width * strlen(word), row, phrase, COLOR_GREEN, COLOR_GOLD);
+	j += strlen(word) + strlen(phrase);
+      } else{
+	drawString5x7(col, row, &maze[i * maze_width + j], COLOR_GREEN, COLOR_GOLD);
+      }
+    }
+  }
+}
+    
+void
+update_shape()
+{
+  screen_update_balls();
+}
+   
+
+
+void
+__interrupt_vec(PORT2_VECTOR) Port_2(){
+  if (P2IFG & SWITCHES) {	      /* did a button cause this interrupt? */
+    P2IFG &= ~SWITCHES;		      /* clear pending sw interrupts */
+    switch_interrupt_handler();	/* single handler for all switches */
+  }
+}
+
