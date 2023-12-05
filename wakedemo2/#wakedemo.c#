@@ -135,6 +135,7 @@ void move_enemies_toward_player(short playerCol, short playerRow){
     }
   }
 
+
     screen_update_enemies(COLOR_BLUE);
 }
 
@@ -199,6 +200,8 @@ void wdt_c_handler()
 }
 
 void update_shape();
+
+void 
 
 void main()
 {
